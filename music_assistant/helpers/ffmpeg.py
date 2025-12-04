@@ -354,7 +354,6 @@ def get_ffmpeg_args(  # noqa: PLR0915
             "wav",
         ]
     elif output_format.content_type == ContentType.FLAC:
-        # use level 0 compression for fastest encoding
         sample_fmt = "s32" if output_format.bit_depth > 16 else "s16"
         output_args += [
             "-sample_fmt",
@@ -363,8 +362,6 @@ def get_ffmpeg_args(  # noqa: PLR0915
             str(output_format.sample_rate),
             "-f",
             "flac",
-            "-compression_level",
-            "0",
         ]
     else:
         raise RuntimeError("Invalid/unsupported output format specified")
