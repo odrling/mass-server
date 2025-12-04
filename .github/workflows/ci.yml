@@ -13,6 +13,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   # supported build archs
   ARCHS: x86_64 aarch64
+  PYTHON_VERSION: 3.13
 
 jobs:
 
@@ -72,6 +73,8 @@ jobs:
           tags: ${{ github.sha }}-${{ matrix.config.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           containerfiles: Dockerfile
+          build-args: |
+            MASS_VERSION=2.6.3.dev0
 
       - name: Push image
         id: push-image
@@ -84,10 +87,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
   push_manifest:
-    needs: 
+    needs:
       - build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/dev'
 
     permissions:
       contents: read
@@ -125,4 +128,3 @@ jobs:
           image_base_raw=${{ env.IMAGE_NAME }}
           image_base=${image_base_raw@L}
           podman manifest push ${image_base} ${{ env.REGISTRY }}/${image_base}:${{ github.ref_name }}
-
