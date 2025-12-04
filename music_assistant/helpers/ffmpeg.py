@@ -340,7 +340,7 @@ def get_ffmpeg_args(  # noqa: PLR0915
             "nut",
         ]
     elif output_format.content_type == ContentType.AAC:
-        output_args = ["-f", "adts", "-c:a", "aac", "-b:a", "256k"]
+        output_args = ["-f", "adts", "-c:a", "libfdk_aac", "-b:a", "256k"]
     elif output_format.content_type == ContentType.MP3:
         output_args = ["-f", "mp3", "-b:a", "320k"]
     elif output_format.content_type == ContentType.WAV:
