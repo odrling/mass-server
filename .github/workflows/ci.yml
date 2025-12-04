@@ -1,0 +1,128 @@
+name: Build and push image
+
+on:
+  push:
+  pull_request:
+    branches: ["dev"]
+  workflow_dispatch:
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository }}
+  # supported build archs
+  ARCHS: x86_64 aarch64
+
+jobs:
+
+  build:
+    runs-on: ${{ matrix.config.runner }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.id != github.repository_id }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - arch: x86_64
+            platform: linux/amd64
+            target: ""
+            runner: ubuntu-24.04
+          - arch: aarch64
+            platform: linux/arm64
+            target: ""
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v6.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=schedule
+
+      - name: Build python package
+        run: >-
+          pip install build && python3 -m build
+
+      - name: Build image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          platforms: ${{ matrix.config.platform }}
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ github.sha }}-${{ matrix.config.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          containerfiles: Dockerfile
+
+      - name: Push image
+        id: push-image
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+  push_manifest:
+    needs: 
+      - build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Podman login
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: create and push manifest for supported platforms
+        run: |
+          image_base_raw=${{ env.IMAGE_NAME }}
+          image_base=${image_base_raw@L}
+          image_base_sha=${image_base_raw@L}:${{ github.sha }}
+
+          podman manifest create ${image_base}
+
+          archs="${{ env.ARCHS }}"
+
+          for arch in ${archs}; do
+            podman pull ${{ env.REGISTRY }}/${image_base_sha}-${arch}
+            podman manifest add ${image_base} ${{ env.REGISTRY }}/${image_base_sha}-${arch}
+          done
+
+          podman manifest push ${image_base} ${{ env.REGISTRY }}/${image_base_sha}
+
+      - name: push branch manifest
+        run: |
+          image_base_raw=${{ env.IMAGE_NAME }}
+          image_base=${image_base_raw@L}
+          podman manifest push ${image_base} ${{ env.REGISTRY }}/${image_base}:${{ github.ref_name }}
+
